@@ -4,6 +4,7 @@ import tldextract
 import math
 from urllib.parse import urlparse
 import socket
+import threading
 
 Suspicious_TLD=['zip','cricket','link','work','party','gq','kim','country','science','tk']
 Suspicious_Domain=['luckytime.co.kr','mattfoll.eu.interia.pl','trafficholder.com','dl.baixaki.com.br','bembed.redtube.comr','tags.expo9.exponential.com','deepspacer.com','funad.co.kr','trafficconverter.biz']
@@ -101,7 +102,6 @@ def getFeatures(url, label):
 
 def main(message):
 
-
     result = pd.DataFrame(columns=('domain','entropy','num of hyphen','num of delim','len of domain','num of at',\
     'is IP','presence of Suspicious_TLD','presence of suspicious domain','label'))
 
@@ -113,35 +113,38 @@ def main(message):
     return clf.predict(result)
 
 
+def recv_msg(new_conn, new_addr):
+    while True:
+        try:
+            c_info = new_conn.recv(1024).decode('gbk')  # 接受客户端消息并解码
+            print("receive info from ", new_addr)
+            info = main(c_info)
+            info_send = str(info[0])
+            info_send = info_send.encode('gbk')
+            new_conn.send(info_send)
+            if c_info == 'bye':  # 当客户端发送bye时，服务端给客户端发送bye并结束循环
+                conn.send(b'bye')
+                break
+        except ConnectionResetError as e:
+            print(e)
+            break
+    new_conn.close()
+
+
 if __name__ == '__main__':
     clf = joblib.load('rfc.pkl')
     message = ''
-    server = socket.socket()
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind(('127.0.0.1', 9001))
+
     server.listen()
 
-    conn, addr = server.accept()
     while True:
+        conn, addr = server.accept()
+        print('新用户[%s]连接' % str(addr))
+        thread_msg = threading.Thread(target=recv_msg, args=(conn, addr))
+        thread_msg.setDaemon(True)
+        thread_msg.start()
 
-        c_info = conn.recv(1024).decode('gbk')  # 接受客户端消息并解码
-        print(c_info)
-        print(type(c_info))
-        info = main(c_info)
-        info_send = str(info[0])
-        # info_send = "hello"
-        info_send = info_send.encode('gbk')
-        conn.send(info_send)
-        if c_info == 'bye':  # 当客户端发送bye时，服务端给客户端发送bye并结束循环
-            conn.send(b'bye')
-            break
-    conn.close()
     server.close()
-
-
-    # i = main("www.baidu.com")
-    # print(i)
-    # print(type(i))
-    # print(type(i[0]))
-    # t = int(i[0])
-    # print(t, type(t))
